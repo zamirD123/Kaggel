@@ -1,0 +1,106 @@
+---
+title: "Kaggel"
+author: "Gil Omer & Doron Zamir"
+date: "6/19/2021"
+output:
+  html_document:
+    html_preview: true
+    toc: true 
+    toc_float: true
+    theme: readable
+    highlight: breezedark
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  eval = TRUE,
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  cache = FALSE,
+  dev = "svglite",
+  fig.ext = ".svg")
+```
+
+## Load Packages
+
+```{r load_pack}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  tidyverse,
+  magritrr,
+  tidymodels,
+  DALEX,
+  DataExplorer,
+  GGally,
+  rpart,
+  rattle,
+  rpart.plot,
+  RColorBrewer,
+  ada,
+  doParallel,
+  pROC,
+  broom,
+  caret,
+  e1071 
+)
+```
+
+## Load Data
+
+```{r}
+data_raw <- read.csv("Data/train.csv")
+test_raw <- read.csv("Data/test.csv")
+set.seed(1991)
+```
+
+## Split
+
+```{r}
+wage_split <- initial_split(data_raw, prop = 0.75, strata = lnwage)
+wage_train <- training(wage_split)
+wage_test <- testing(wage_split)
+```
+
+### Basic Recipe
+
+```{r}
+wage_rec <-
+  recipe(lnwage ~., data = wage_train) %>% 
+  update_role(ID, new_role = "ID") %>% 
+  step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>% 
+  step_mutate(age = edyrs + expf + expp) %>% 
+  step_poly(age, degree = 2) %>% 
+  step_zv(all_predictors())
+
+wage_baked <- wage_rec %>% 
+  prep() %>% 
+  bake(new_data = NULL)
+```
+
+## EDA
+
+```{r}
+wage_baked %>% select(-ID) %>% plot_histogram()
+
+```
+
+```{r}
+plot_boxplot(wage_baked, by = "lnwage")
+```
+
+```{r}
+```
+
+### set workflow
+
+```{r}
+basic_wkflw <- 
+  workflow() %>% 
+  add_recipe(wage_rec)
+
+basic_wkflw
+wage_fit <- basic_wkflw %>% fit(data = wage_train)
+```
+
+## 
