@@ -54,26 +54,35 @@ test_raw <- read.csv("Data/test.csv")
 set.seed(1991)
 ```
 
-## Split
+## Initial Split
 
 ```{r}
 wage_split <- initial_split(data_raw, prop = 0.75, strata = lnwage)
 wage_train <- training(wage_split)
 wage_test <- testing(wage_split)
+
+```
+
+### FOLDS
+
+```{r}
+wage_folds <- wage_train %>% 
+  vfold_cv(v=5)
 ```
 
 ### Basic Recipe
 
 ```{r}
-wage_rec <-
+base_rec <-
   recipe(lnwage ~., data = wage_train) %>% 
   update_role(ID, new_role = "ID") %>% 
   step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>% 
   step_mutate(age = edyrs + expf + expp) %>% 
-  step_poly(age, degree = 2) %>% 
+  step_poly(age, degree = tune("lambda")) %>%
+  step_center(all_predictors())
   step_zv(all_predictors())
 
-wage_baked <- wage_rec %>% 
+wage_baked <- base_rec %>% 
   prep() %>% 
   bake(new_data = NULL)
 ```
