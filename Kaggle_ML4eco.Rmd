@@ -52,7 +52,9 @@ wage_test <-
 
 ```
 
-\#\#explore data - glimpse
+# Data Analasys
+
+## explore data - glimpse
 
 ```{r glimpse}
 glimpse(wage_train)
@@ -60,7 +62,10 @@ wage_train %>%skim()
 
 ```
 
-We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors. In addition, we can see there are no farmers in the train set.
+We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors.\
+In addition, we can see there are no farmers in the train set.
+
+## Histograms
 
 ```{r histogram}
 plot_histogram(wage_train)
@@ -69,7 +74,7 @@ plot_histogram(wage_train)
 
 We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we can think that the age of most people could be standardized to education years+exp years.
 
-\#\#boxplot of every variable against log wage
+## Boxplot of every variable against log wage
 
 ```{r boxplot}
 plot_boxplot(wage_train,"lnwage")
@@ -77,40 +82,71 @@ plot_boxplot(wage_train,"lnwage")
 
 we can see that there is more variance in higher education level and in very high and small experience (full time). we can see that higher wage is more associated with low part time experience.
 
-# 
+# Modeling
 
-\#\#Set model and params
+## Basic Model
+
+This model should use as a benchmark
+
+### Basic Recipe
 
 ```{r}
-wage_rec <-
+base_rec <-
   recipe(lnwage ~., data = wage_train) %>% 
   update_role(ID, new_role = "ID") %>% 
-  step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>% 
-  step_mutate(age = edyrs + expf + expp) %>% 
-  step_poly(age, degree = tune("lambda")) %>% #tune poly
+  step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>%
+  step_mutate(age = edyrs + expf + expp) %>%
+  step_poly(age, degree = tune("lambda")) %>%
+  step_center(all_predictors(), - all_nominal()) %>%
+  step_scale(all_predictors(), - all_nominal()) %>%
+  step_dummy(all_nominal()) %>%
   step_zv(all_predictors())
-  #wage_baked <- wage_rec %>% prep() %>% bake(new_data = NULL)
 ```
 
-\#\#set a grid for lambda
+### Set cross - Validation
 
 ```{r}
-lambda_grid <- expand_grid("lambda"=1:8)
+cv_splits <- wage_train %>%
+  vfold_cv(v = 5)
 ```
 
-\#Define the model we will start with a regular linear regression
+### Set a grid for lambda
 
 ```{r}
-lm_mod <- linear_reg()%>% set_engine("lm")
+lambda_grid <- expand_grid("lambda" = 1:8)
 ```
 
-\#cross-validation
+### Define a regular linear regression
 
 ```{r}
-cv_splits <- wage_train %>% vfold_cv(v = 5)
+lm_mod <- linear_reg() %>%
+  set_engine("lm") %>% 
+  set_mode("regression")
 ```
 
-\#estimate CV-RMSE over lamda grid
+### Workflow
+
+```{r}
+basic_wkflw <- 
+  workflow() %>% 
+  add_recipe(base_rec) %>% 
+  add_model(lm_mod)
+```
+
+### Tune
+
+```{r}
+basic_lm_reuslts <- basic_wkflw %>% 
+  tune_grid(
+    resamples= cv_splits,
+    grid = lambda_grid
+    )
+
+basic_lm_reuslts %>% show_best(
+  metric = "rmse")
+```
+
+### Estimate CV-RMSE over lambda grid
 
 ```{r}
 wage_results <- tune_grid(
