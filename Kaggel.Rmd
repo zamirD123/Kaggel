@@ -22,6 +22,8 @@ knitr::opts_chunk$set(
   fig.ext = ".svg")
 ```
 
+# Getting Ready
+
 ## Load Packages
 
 ```{r load_pack}
@@ -30,19 +32,10 @@ pacman::p_load(
   tidyverse,
   magritrr,
   tidymodels,
-  DALEX,
   DataExplorer,
   GGally,
   rpart,
-  rattle,
-  rpart.plot,
-  RColorBrewer,
-  ada,
-  doParallel,
-  pROC,
-  broom,
-  caret,
-  e1071 
+  broom
 )
 ```
 
@@ -54,53 +47,68 @@ test_raw <- read.csv("Data/test.csv")
 set.seed(1991)
 ```
 
-## Split
+## Initial Split
 
 ```{r}
 wage_split <- initial_split(data_raw, prop = 0.75, strata = lnwage)
 wage_train <- training(wage_split)
 wage_test <- testing(wage_split)
+
 ```
 
-### Basic Recipe
+### CV Fold
 
 ```{r}
-wage_rec <-
+wage_folds <- wage_train %>% 
+  vfold_cv(v=5)
+```
+
+# Benchmark Model
+
+## Basic Recipe
+
+```{r}
+base_rec <-
   recipe(lnwage ~., data = wage_train) %>% 
   update_role(ID, new_role = "ID") %>% 
-  step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>% 
-  step_mutate(age = edyrs + expf + expp) %>% 
-  step_poly(age, degree = 2) %>% 
+  step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>%
+  step_mutate(age = edyrs + expf + expp) %>%
+  step_poly(age, degree = tune("lambda")) %>%
+  step_center(all_predictors(), - all_nominal()) %>%
+  step_scale(all_predictors(), - all_nominal()) %>%
+  step_dummy(all_nominal()) %>%
   step_zv(all_predictors())
 
-wage_baked <- wage_rec %>% 
-  prep() %>% 
-  bake(new_data = NULL)
 ```
 
-## EDA
+## Set Linear Models
 
 ```{r}
-wage_baked %>% select(-ID) %>% plot_histogram()
-
+lm_spec <- linear_reg() %>% 
+  set_args(penalty = tune(), mixture = 1, nlambadas = 10) %>% 
+  set_engine("glmnet") %>% 
+  set_mode("regression")
 ```
 
-```{r}
-plot_boxplot(wage_baked, by = "lnwage")
-```
-
-```{r}
-```
-
-### set workflow
+## Workflow
 
 ```{r}
 basic_wkflw <- 
   workflow() %>% 
-  add_recipe(wage_rec)
+  add_recipe(base_rec) %>% 
+  add_model(lm_spec)
 
-basic_wkflw
-wage_fit <- basic_wkflw %>% fit(data = wage_train)
 ```
 
-## 
+## Tune
+
+```{r}
+basic_lm_reuslts <- basic_wkflw %>% 
+  tune_grid(
+    resamples= wage_folds
+  )
+
+basic_lm_reuslts %>% show_best(
+  metric = "rmse"
+)
+```

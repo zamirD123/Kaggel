@@ -28,7 +28,7 @@ pacman::p_load(
   GGally,      # for pairs plot
   skimr,       # for summary statistics
   here,         # for referencing folders and files
-  broom, # for tidy model output
+  broom,  # for tidy model output
   rpart, # for estimating CART
   rpart.plot, # for plotting rpart objects
   ranger, # for estimating random forests
@@ -52,36 +52,34 @@ wage_test <-
 
 ```
 
-##explore data - glimpse
+\#\#explore data - glimpse
+
 ```{r glimpse}
 glimpse(wage_train)
 wage_train %>%skim()
 
 ```
-We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors.
-In addition, we can see there are no farmers in the train set. 
+
+We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors. In addition, we can see there are no farmers in the train set.
 
 ```{r histogram}
 plot_histogram(wage_train)
 
-# #changing to factor
-# cols <- c("female", "colldeg", "advdeg", "northeast", "northcentral", "south","black", "hisp", "otherrace","manager", "business", "financialop", "computer", "architect", "scientist", "socialworker", "postseceduc", "legaleduc", "artist", "lawyerphysician", "healthcare", "healthsupport", "protective", "foodcare", "building", "sales", "officeadmin", "farmer", "constructextractinstall", "production", "transport")
-# wage_train %>%
-#        mutate_each_(funs(factor(.)),cols)
-
 ```
-We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we can think that the age of most people could be standardized to education years+exp years. 
 
-##boxplot of every variable against log wage
+We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we can think that the age of most people could be standardized to education years+exp years.
+
+\#\#boxplot of every variable against log wage
+
 ```{r boxplot}
 plot_boxplot(wage_train,"lnwage")
 ```
+
 we can see that there is more variance in higher education level and in very high and small experience (full time). we can see that higher wage is more associated with low part time experience.
 
-#
+# 
 
-
-##Set model and params
+\#\#Set model and params
 
 ```{r}
 wage_rec <-
@@ -93,20 +91,27 @@ wage_rec <-
   step_zv(all_predictors())
   #wage_baked <- wage_rec %>% prep() %>% bake(new_data = NULL)
 ```
-##set a grid for lambda
+
+\#\#set a grid for lambda
+
 ```{r}
 lambda_grid <- expand_grid("lambda"=1:8)
 ```
-#Define the model
-we will start with a regular linear regression 
+
+\#Define the model we will start with a regular linear regression
+
 ```{r}
 lm_mod <- linear_reg()%>% set_engine("lm")
 ```
-#cross-validation
+
+\#cross-validation
+
 ```{r}
 cv_splits <- wage_train %>% vfold_cv(v = 5)
 ```
-#estimate CV-RMSE over lamda grid
+
+\#estimate CV-RMSE over lamda grid
+
 ```{r}
 wage_results <- tune_grid(
   wage_rec,
