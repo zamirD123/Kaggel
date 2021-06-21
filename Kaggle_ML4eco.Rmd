@@ -72,7 +72,7 @@ plot_histogram(wage_train)
 
 ```
 
-We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we can think that the age of most people could be standardized to education years+exp years.
+We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we want to look at the total education years+exp years (=~age).
 
 ## Boxplot of every variable against log wage
 
@@ -80,13 +80,13 @@ We can see that years of experience (full time) is more spread (from 0 to 45) co
 plot_boxplot(wage_train,"lnwage")
 ```
 
-we can see that there is more variance in higher education level and in very high and small experience (full time). we can see that higher wage is more associated with low part time experience.
+we can see that there is more variance in higher education levels and in very high and small experience (full time). we can see that higher wage is more associated with low part time experience.
 
 # Modeling
 
 ## Basic Model
 
-This model should use as a benchmark
+This model should be used as a benchmark
 
 ### Basic Recipe
 
@@ -97,6 +97,8 @@ base_rec <-
   step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>%
   step_mutate(age = edyrs + expf + expp) %>%
   step_poly(age, degree = tune("lambda")) %>%
+  step_poly(edyrs, degree = tune("delta")) %>%
+  step_poly(expfsq, degree = tune("gamma")) %>%
   step_center(all_predictors(), - all_nominal()) %>%
   step_scale(all_predictors(), - all_nominal()) %>%
   step_dummy(all_nominal()) %>%
@@ -110,10 +112,13 @@ cv_splits <- wage_train %>%
   vfold_cv(v = 5)
 ```
 
-### Set a grid for lambda
+### Set a grid for lambda, delta
 
 ```{r}
-lambda_grid <- expand_grid("lambda" = 1:8)
+#lambda_grid <- expand_grid()
+
+super_grid <- expand_grid("lambda" = 1:4,"delta" = 1:4,"gamma" = 1:4)
+
 ```
 
 ### Define a regular linear regression
@@ -139,21 +144,19 @@ basic_wkflw <-
 basic_lm_reuslts <- basic_wkflw %>% 
   tune_grid(
     resamples= cv_splits,
-    grid = lambda_grid
+    grid = super_grid
     )
 
 basic_lm_reuslts %>% show_best(
-  metric = "rmse")
+  metric = "rmse", n=5, maximize=FALSE)
 ```
 
-### Estimate CV-RMSE over lambda grid
 
+### select best lambda
 ```{r}
-wage_results <- tune_grid(
-  wage_rec,
-  model     = lm_mod,
-  resamples = cv_splits,
-  grid      = lambda_grid
-)
-wage_results
+best_lambda <- basic_lm_reuslts %>% select_best(metric = "rmse",maximize=FALSE)
+best_lambda
 ```
+We can see that the best degree for each predictor is 1.
+
+
