@@ -62,7 +62,7 @@ wage_train %>%skim()
 
 ```
 
-We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors.\
+We can see that variables female, college degree, advanced degree,region, race and occupation dummies, should be factors.
 In addition, we can see there are no farmers in the train set.
 
 ## Histograms
@@ -72,7 +72,10 @@ plot_histogram(wage_train)
 
 ```
 
-We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. Hence, we want to look at the total education years+exp years (=~age).
+We can see that years of experience (full time) is more spread (from 0 to 45) compared to part time (most observations around 0). This can be explained if most people work in part time jobs for a short period (before/after college for example) but move on to full time jobs. 
+In addition, we can see a heaps around 12 years education. 
+Hence, we want to look at the total education years+exp years (=~age).
+
 
 ## Boxplot of every variable against log wage
 
@@ -92,13 +95,15 @@ This model should be used as a benchmark
 
 ```{r}
 base_rec <-
-  recipe(lnwage ~., data = wage_train) %>% 
+  recipe(lnwage ~., data = wage_train) %>%
+  step_rm(expfsq) %>% 
+  step_rm(exppsq) %>%
   update_role(ID, new_role = "ID") %>% 
   step_bin2factor(all_predictors(), -starts_with("exp"), -"edyrs" ) %>%
-  step_mutate(age = edyrs + expf + expp) %>%
-  step_poly(age, degree = tune("lambda")) %>%
+  #step_mutate(age = edyrs + expf + expp) %>%
+  step_poly(expp, degree = tune("lambda")) %>%
   step_poly(edyrs, degree = tune("delta")) %>%
-  step_poly(expfsq, degree = tune("gamma")) %>%
+  step_poly(expf, degree = tune("gamma")) %>%
   step_center(all_predictors(), - all_nominal()) %>%
   step_scale(all_predictors(), - all_nominal()) %>%
   step_dummy(all_nominal()) %>%
@@ -108,6 +113,7 @@ base_rec <-
 ### Set cross - Validation
 
 ```{r}
+set.seed(123) 
 cv_splits <- wage_train %>%
   vfold_cv(v = 5)
 ```
@@ -116,7 +122,6 @@ cv_splits <- wage_train %>%
 
 ```{r}
 #lambda_grid <- expand_grid()
-
 super_grid <- expand_grid("lambda" = 1:4,"delta" = 1:4,"gamma" = 1:4)
 
 ```
@@ -139,6 +144,7 @@ basic_wkflw <-
 ```
 
 ### Tune
+Because of the connections between years of education and experience, we tune their polynomial order together.   
 
 ```{r}
 basic_lm_reuslts <- basic_wkflw %>% 
@@ -152,11 +158,103 @@ basic_lm_reuslts %>% show_best(
 ```
 
 
-### select best lambda
+### select best tune 
 ```{r}
-best_lambda <- basic_lm_reuslts %>% select_best(metric = "rmse",maximize=FALSE)
-best_lambda
+best_tune <- basic_lm_reuslts %>% select_best(metric = "rmse",maximize=FALSE)
+best_tune
 ```
-We can see that the best degree for each predictor is 1.
 
+### use best degree
+```{r}
+base_final <- base_rec %>% 
+  finalize_recipe(best_tune)
+```
+### apply on training and test
+```{r}
+base_train <- base_final %>% 
+  prep() %>% 
+  juice()
+base_test <- base_final %>% 
+  prep() %>% 
+  bake(new_data = wage_test)
+```
+# Fit the Model to the Training Set
 
+Fit the optimal model to the training set:
+```{r fit}
+base_fit <- lm_mod %>% 
+  fit(lnwage ~ ., data = base_train)
+```
+
+Here are the estimated coefficients:
+```{r broom_fit}
+base_fit %>% tidy()
+```
+# Make Predictions Using the Test Set
+
+Create a tibble with the predictions and ID
+```{r pred}
+base_pred <- base_fit %>% 
+  predict(new_data = base_test) %>% 
+  bind_cols(base_test) %>% mutate(lnwage=.pred)%>% 
+  select(ID, lnwage)
+head(base_pred)
+```
+##save table for submission
+```{r}
+write.csv(x=base_pred, file="test_basesample.csv", row.names = FALSE) 
+```
+
+comment: the basic model produced a score of 0.158. 
+
+##adding trees to the model
+As we saw above, the relationship between wage and education/experience is not linear, and there is more variation in higher levels of education and experience.  Hence, we will now try  a more complex model by combining trees. 
+
+```{r}
+formula_full <- lnwage ~ .
+wage_tree_fit <- rpart(formula_full,method="anova", data=base_train,control = rpart.control(cp=0,minsplit = 80)) #we control the number of variables in order to avoid overfitting.
+rpart.plot(wage_tree_fit, cex = 1)
+
+```
+
+## tune cp -cross validation
+```{r}
+printcp(wage_tree_fit)
+plotcp(wage_tree_fit)
+```
+
+we can see that the first optimal cp is 0.014
+
+#pruning the model
+
+```{r}
+tree_prune_wage <- rpart::prune(wage_tree_fit, cp=0.014)
+rpart.plot(tree_prune_wage)
+```
+
+##variable importance
+
+```{r}
+vip(tree_prune_wage)
+```
+we can see that female and education variables are the most important.
+
+##predict train
+```{r}
+redict_prune_train <- predict(tree_prune_wage, base_train)
+pred_train_tree <- base_train %>% mutate(pred_tree = redict_prune_train) 
+#test rmse
+pred_train_tree %>% 
+  rmse(lnwage, pred_tree)
+```
+
+##predict test
+```{r}
+redict_prune_test <- predict(tree_prune_wage, base_test)
+pred_test_tree <- base_test %>% mutate(pred_tree = redict_prune_test) %>% select(ID,pred_tree) %>% mutate(lnwage=pred_tree) %>% select(ID,lnwage)
+```
+
+##save table for submission
+```{r}
+write.csv(x=pred_test_tree, file="test_tree.csv", row.names = FALSE) 
+```
